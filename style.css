@@ -1043,3 +1043,44 @@ S/* LANA'S addRECIPES PAGE STYLES** */
 .mini-delete:hover {
   background: #6f2208;
 }
+
+
+
+/* AJAX Message Styles */
+.success-message {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #a5d6a7;
+    padding: 12px 20px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    font-weight: bold;
+}
+
+.error-message {
+    background-color: #ffebee;
+    color: #c62828;
+    border: 1px solid #ffcdd2;
+    padding: 12px 20px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    font-weight: bold;
+}
+
+/* Disabled button style */
+.table-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Action buttons container */
+.action-buttons label {
+    margin-right: 10px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.action-buttons input[type="radio"] {
+    margin-right: 3px;
+    cursor: pointer;
+}
