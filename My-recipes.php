@@ -1,11 +1,3 @@
-<?php /*
-require_once 'DBconfig.php';
-
-$stmt = $pdo->query("SELECT * FROM recipe");
-$recipes = $stmt->fetchAll();
-*/
-?>
-
 
 <?php
 require_once 'DBconfig.php';
@@ -15,6 +7,7 @@ $userID = $_SESSION['user_id'];
 $stmt = $pdo->prepare("SELECT * FROM recipe WHERE userID = ?");
 $stmt->execute([$userID]);
 $recipes = $stmt->fetchAll();
+
 ?>
 
 
@@ -24,6 +17,43 @@ $recipes = $stmt->fetchAll();
   <meta charset="UTF-8">
   <title>My Recipes</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <style>
+.recipe-delete-button {
+    background: #CC3434 !important;
+    color: #F8E1B8 !important;
+    border: none !important;
+    padding: 10px 24px !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    font-size: 15px !important;
+    font-family: "Georgia", serif !important;
+}
+</style>
+<script>
+$(document).on('click', '.recipe-delete-button', function () {
+    if (!confirm('Are you sure you want to delete this recipe?')) return;
+
+    const btn = $(this);
+    const row = btn.closest('tr');
+
+    $.ajax({
+        url: 'delete-recipe.php',
+        type: 'POST',
+        data: { id: btn.data('id') },
+        success: function (response) {
+            if (response.trim() === 'true') {
+                row.remove();
+            } else {
+                alert('Could not delete. Please try again.');
+            }
+        },
+        error: function () {
+            alert('An error occurred. Please try again.');
+        }
+    });
+});
+</script>
 </head>
 
 <body class="my-recipes-page">
@@ -114,8 +144,8 @@ echo $l->fetchColumn();
 </td>
 
 <!-- Delete -->
-<td>
-<a href="delete-recipe.php?id=<?= $r['id'] ?>" class="delete-link">Delete</a>
+<td style="text-align: center; vertical-align: middle;">
+    <button class="recipe-delete-button" data-id="<?= $r['id'] ?>">Delete</button>
 </td>
 
 </tr>
@@ -141,7 +171,7 @@ echo $l->fetchColumn();
 
       <div class="footer-col center">
         <div class="brand">
-          <img src="Bakery1.png">
+          <img src="images/Bakery.png">
         </div>
         <small>©2026 Munch. All rights reserved</small>
       </div>
