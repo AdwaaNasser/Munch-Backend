@@ -1,60 +1,69 @@
 <?php
 // ============================================================
-// handle_report_action.php — Admin: Block User or Dismiss Report
+// ajax_handle_report.php — AJAX Handler for Admin Actions
+// Returns JSON response for AJAX requests
 // ============================================================
 require_once 'DBconfig.php';
 
-// (a) Verify admin access
-requireAdmin();
+// Set JSON header
+header('Content-Type: application/json');
 
-// Only accept POST requests
+// Only accept POST requests via AJAX
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header("Location: admin.php");
+    echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     exit();
 }
 
-// Get and validate POST data
-$reportID = isset($_POST['report_id']) ? (int)$_POST['report_id'] : 0;
-$recipeID = isset($_POST['recipe_id']) ? (int)$_POST['recipe_id'] : 0;
-$creatorID = isset($_POST['creator_id']) ? (int)$_POST['creator_id'] : 0;
-$action = isset($_POST['action']) ? $_POST['action'] : '';
+// Verify admin access
+if (!isset($_SESSION['user_id']) || $_SESSION['user_type'] !== 'admin') {
+    echo json_encode(['success' => false, 'message' => 'Unauthorized access']);
+    exit();
+}
+
+// Get POST data (supports both JSON and form data)
+$input = json_decode(file_get_contents('php://input'), true);
+if ($input) {
+    $reportID = isset($input['report_id']) ? (int)$input['report_id'] : 0;
+    $recipeID = isset($input['recipe_id']) ? (int)$input['recipe_id'] : 0;
+    $creatorID = isset($input['creator_id']) ? (int)$input['creator_id'] : 0;
+    $action = isset($input['action']) ? $input['action'] : '';
+} else {
+    $reportID = isset($_POST['report_id']) ? (int)$_POST['report_id'] : 0;
+    $recipeID = isset($_POST['recipe_id']) ? (int)$_POST['recipe_id'] : 0;
+    $creatorID = isset($_POST['creator_id']) ? (int)$_POST['creator_id'] : 0;
+    $action = isset($_POST['action']) ? $_POST['action'] : '';
+}
 
 // Validate inputs
 if ($reportID <= 0 || $recipeID <= 0 || $creatorID <= 0 || !in_array($action, ['block_user', 'dismiss_report'])) {
-    $_SESSION['error_message'] = "Invalid request. Please try again.";
-    header("Location: admin.php");
+    echo json_encode(['success' => false, 'message' => 'Invalid request parameters']);
     exit();
 }
 
 // Helper function to delete recipe files
 function deleteRecipeFiles($recipe) {
     if (!empty($recipe['photoFileName'])) {
-        $filePath = 'uploads/recipes/' . $recipe['photoFileName'];
-        if (file_exists($filePath)) {
-            unlink($filePath);
+        $photoPath = 'images/' . $recipe['photoFileName'];
+        if (file_exists($photoPath)) {
+            unlink($photoPath);
         }
     }
     if (!empty($recipe['videoFilePath'])) {
-        $filePath = 'uploads/videos/' . $recipe['videoFilePath'];
-        if (file_exists($filePath)) {
-            unlink($filePath);
+        $videoPath = $recipe['videoFilePath'];
+        if (file_exists($videoPath)) {
+            unlink($videoPath);
         }
     }
 }
 
 try {
-    // Start transaction
     $pdo->beginTransaction();
     
-    // ===========================================
-    // BLOCK USER ACTION
-    // ===========================================
     if ($action === 'block_user') {
-        
-        // 1. FIRST, delete ONLY the specific report we're handling
+        // 1. Delete the specific report
         executeQuery($pdo, "DELETE FROM report WHERE id = ?", [$reportID]);
         
-        // 2. Get user information before deletion
+        // 2. Get user information
         $userStmt = executeQuery($pdo, "SELECT * FROM user WHERE id = ?", [$creatorID]);
         
         if ($userStmt && $userStmt->rowCount() > 0) {
@@ -66,45 +75,37 @@ try {
             if ($recipesStmt && $recipesStmt->rowCount() > 0) {
                 $recipes = $recipesStmt->fetchAll();
                 
-                // 4. Delete each recipe and its associated data
                 foreach ($recipes as $recipe) {
                     $currentRecipeID = $recipe['id'];
-                    
-                    // Delete recipe files
                     deleteRecipeFiles($recipe);
                     
-                    // Delete recipe data from all related tables
+                    // Delete related data
                     executeQuery($pdo, "DELETE FROM ingredients WHERE recipeID = ?", [$currentRecipeID]);
                     executeQuery($pdo, "DELETE FROM instructions WHERE recipeID = ?", [$currentRecipeID]);
                     executeQuery($pdo, "DELETE FROM likes WHERE recipeID = ?", [$currentRecipeID]);
                     executeQuery($pdo, "DELETE FROM favourites WHERE recipeID = ?", [$currentRecipeID]);
                     executeQuery($pdo, "DELETE FROM comment WHERE recipeID = ?", [$currentRecipeID]);
-                    
-                    // Delete ANY remaining reports for this recipe (but NOT all reports)
                     executeQuery($pdo, "DELETE FROM report WHERE recipeID = ?", [$currentRecipeID]);
                 }
                 
-                // 5. Delete all recipes by this user
                 executeQuery($pdo, "DELETE FROM recipe WHERE userID = ?", [$creatorID]);
             }
             
-            // 6. Delete user's activity from other tables
+            // Delete user activity
             executeQuery($pdo, "DELETE FROM comment WHERE userID = ?", [$creatorID]);
             executeQuery($pdo, "DELETE FROM likes WHERE userID = ?", [$creatorID]);
             executeQuery($pdo, "DELETE FROM favourites WHERE userID = ?", [$creatorID]);
-            
-            // 7. Delete ANY reports made BY this user (not reports ABOUT this user's recipes)
             executeQuery($pdo, "DELETE FROM report WHERE userID = ?", [$creatorID]);
             
-            // 8. Delete user's profile photo
+            // Delete profile photo
             if (!empty($user['photoFileName'])) {
-                $photoPath = 'uploads/users/' . $user['photoFileName'];
+                $photoPath = 'images/' . $user['photoFileName'];
                 if (file_exists($photoPath)) {
                     unlink($photoPath);
                 }
             }
             
-            // 9. Add user to blockeduser table (check if not already there)
+            // Add to blocked users
             $checkBlocked = executeQuery($pdo, "SELECT * FROM blockeduser WHERE emailAddress = ?", [$user['emailAddress']]);
             if ($checkBlocked && $checkBlocked->rowCount() == 0) {
                 executeQuery($pdo, 
@@ -113,38 +114,30 @@ try {
                 );
             }
             
-            // 10. Delete user from user table
+            // Delete user
             executeQuery($pdo, "DELETE FROM user WHERE id = ?", [$creatorID]);
         }
         
-        $_SESSION['success_message'] = "User has been blocked and all their content has been removed.";
+        $pdo->commit();
+        echo json_encode(['success' => true, 'message' => 'User has been blocked and all content removed']);
         
-    // ===========================================
-    // DISMISS REPORT ACTION  
-    // ===========================================
     } elseif ($action === 'dismiss_report') {
-        
         // Delete ONLY the specific report
         $result = executeQuery($pdo, "DELETE FROM report WHERE id = ?", [$reportID]);
         
-        if ($result) {
-            $_SESSION['success_message'] = "Report has been dismissed.";
+        if ($result && $result->rowCount() > 0) {
+            $pdo->commit();
+            echo json_encode(['success' => true, 'message' => 'Report dismissed successfully']);
         } else {
-            $_SESSION['error_message'] = "Failed to dismiss report.";
+            throw new Exception('Report not found or already deleted');
         }
     }
     
-    // Commit transaction
-    $pdo->commit();
-    
 } catch (Exception $e) {
-    // Rollback on error
     $pdo->rollBack();
-    $_SESSION['error_message'] = "An error occurred while processing your request.";
-    error_log("Admin action error: " . $e->getMessage());
+    error_log("AJAX Admin action error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'An error occurred: ' . $e->getMessage()]);
 }
 
-// Redirect back to admin page
-header("Location: admin.php");
 exit();
 ?>
